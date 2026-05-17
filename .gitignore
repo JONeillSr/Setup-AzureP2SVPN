@@ -1,0 +1,58 @@
+# Script log files (Setup-AzureP2SVPN_YYYYMMDD_HHMMSS.log, etc.)
+# The scripts generate timestamped logs next to themselves during testing.
+*.log
+Setup-AzureP2SVPN_*.log
+Remove-AzureP2SVPN_*.log
+
+# VPN client config bundles that get downloaded for testing.
+# These contain tenant-specific signing material and SAS URLs;
+# they should never end up in source control.
+*vpnclientconfiguration*.zip
+azurevpnconfig*.xml
+vpnconfig*.zip
+client_config/
+vpn-client-configs/
+
+# Local testing artifacts
+.vscode/launch.json
+.vscode/tasks.json
+.vscode/settings.json
+
+# OS-specific clutter
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# PowerShell-specific
+PSScriptAnalyzer-*.log
+*.pssa-result.xml
+
+# Common credential / secret leak patterns - belt-and-suspenders
+*.env
+.env.*
+*secret*.json
+*credentials*.json
+*.pfx
+*.cer
+*.key
+*.pem
+local-config.ps1
+deploy-vars.ps1
+
+# Backup files from editors
+*.bak
+*.swp
+*.swo
+*~
+
+# Output staging directories some workflows use
+out/
+output/
+artifacts/
+
+# Common scratch / TODO files
+scratch.ps1
+test-local.ps1
+notes.md
+NOTES.md
+TODO.md

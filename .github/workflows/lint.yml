@@ -1,0 +1,142 @@
+name: PSScriptAnalyzer
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '**.ps1'
+      - '**.psm1'
+      - '**.psd1'
+      - '.github/workflows/lint.yml'
+      - 'PSScriptAnalyzerSettings.psd1'
+  push:
+    branches: [main]
+    paths:
+      - '**.ps1'
+      - '**.psm1'
+      - '**.psd1'
+      - '.github/workflows/lint.yml'
+      - 'PSScriptAnalyzerSettings.psd1'
+  workflow_dispatch:
+
+# Cancel any in-progress run for the same branch when a new commit arrives.
+# Useful when you're force-pushing fixups during a PR review cycle.
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Run PSScriptAnalyzer
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cache PowerShell modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/powershell/Modules
+          key: psmodules-${{ runner.os }}-PSScriptAnalyzer
+          restore-keys: |
+            psmodules-${{ runner.os }}-
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
+            Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -SkipPublisherCheck
+          }
+          Get-Module -ListAvailable -Name PSScriptAnalyzer |
+            Select-Object Name, Version |
+            Format-Table -AutoSize
+
+      - name: Run PSScriptAnalyzer
+        id: analyze
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # Use the repo's settings file if present; otherwise rely on defaults.
+          $settingsPath = Join-Path $env:GITHUB_WORKSPACE 'PSScriptAnalyzerSettings.psd1'
+          $invokeParams = @{
+            Path     = $env:GITHUB_WORKSPACE
+            Recurse  = $true
+            Severity = @('Error', 'Warning', 'Information')
+          }
+          if (Test-Path $settingsPath) {
+            Write-Host "Using settings: $settingsPath"
+            $invokeParams['Settings'] = $settingsPath
+          } else {
+            Write-Host "No PSScriptAnalyzerSettings.psd1 found; running with default rules."
+          }
+
+          $results = Invoke-ScriptAnalyzer @invokeParams
+
+          if ($null -eq $results -or $results.Count -eq 0) {
+            Write-Host "::notice::PSScriptAnalyzer found no issues."
+            exit 0
+          }
+
+          # Group by severity for the summary
+          $errors      = @($results | Where-Object Severity -eq 'Error')
+          $warnings    = @($results | Where-Object Severity -eq 'Warning')
+          $information = @($results | Where-Object Severity -eq 'Information')
+
+          Write-Host ""
+          Write-Host "=== PSScriptAnalyzer Results ==="
+          Write-Host "  Errors:       $($errors.Count)"
+          Write-Host "  Warnings:     $($warnings.Count)"
+          Write-Host "  Information:  $($information.Count)"
+          Write-Host ""
+
+          # Emit each finding as a GitHub Actions annotation. This makes the
+          # finding show up inline in the PR diff at the exact line.
+          foreach ($r in $results) {
+            $level = switch ($r.Severity) {
+              'Error'       { 'error' }
+              'Warning'     { 'warning' }
+              'Information' { 'notice' }
+              default       { 'notice' }
+            }
+            # Use forward slashes for cross-platform path consistency
+            $relPath = $r.ScriptPath -replace [regex]::Escape($env:GITHUB_WORKSPACE + [IO.Path]::DirectorySeparatorChar), ''
+            $relPath = $relPath -replace '\\', '/'
+            Write-Host "::${level} file=${relPath},line=$($r.Line),col=$($r.Column),title=PSSA $($r.RuleName)::$($r.Message)"
+          }
+
+          # Surface a summary in the GitHub Actions job summary
+          $summaryPath = $env:GITHUB_STEP_SUMMARY
+          if ($summaryPath) {
+            $md = @"
+## PSScriptAnalyzer Results
+
+| Severity | Count |
+| --- | ---: |
+| Error | $($errors.Count) |
+| Warning | $($warnings.Count) |
+| Information | $($information.Count) |
+
+### Findings
+
+| Severity | Rule | File | Line | Message |
+| --- | --- | --- | ---: | --- |
+"@
+            foreach ($r in ($results | Sort-Object Severity, ScriptPath, Line)) {
+              $relPath = $r.ScriptPath -replace [regex]::Escape($env:GITHUB_WORKSPACE + [IO.Path]::DirectorySeparatorChar), ''
+              $relPath = $relPath -replace '\\', '/'
+              # Escape pipe chars in the message so the markdown table doesn't break
+              $msg = ($r.Message -replace '\|', '\|') -replace '`', "'"
+              $md += "`n| $($r.Severity) | $($r.RuleName) | ``$relPath`` | $($r.Line) | $msg |"
+            }
+            Add-Content -Path $summaryPath -Value $md
+          }
+
+          # Fail the build if there are any Errors. Warnings/Information are surfaced
+          # but don't block. Tighten this rule later if the team wants stricter gating.
+          if ($errors.Count -gt 0) {
+            Write-Host ""
+            Write-Host "::error::Lint failed: $($errors.Count) error-level finding(s)."
+            exit 1
+          }

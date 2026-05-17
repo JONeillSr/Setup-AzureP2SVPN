@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Azure VPN Gateway documentation
+    url: https://learn.microsoft.com/en-us/azure/vpn-gateway/
+    about: For general Azure VPN Gateway questions not specific to this script
+  - name: Azure VPN Client downloads
+    url: https://learn.microsoft.com/en-us/azure/vpn-gateway/azure-vpn-client-versions
+    about: To install the Azure VPN Client app for Windows, macOS, iOS, or Android
