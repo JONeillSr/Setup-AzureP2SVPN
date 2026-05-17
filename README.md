@@ -4,6 +4,7 @@ PowerShell automation for Azure Point-to-Site (P2S) VPN Gateway with Microsoft E
 
 Creates a VPN gateway in an existing Azure VNet, configures Entra ID authentication using the Microsoft-registered audience (no tenant admin consent required), and produces a downloadable VPN client configuration package ready for the Azure VPN Client app.
 
+[![PSScriptAnalyzer](https://github.com/JONeillSr/Setup-AzureP2SVPN/actions/workflows/lint.yml/badge.svg)](https://github.com/JONeillSr/Setup-AzureP2SVPN/actions/workflows/lint.yml)
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.2%2B-blue?logo=powershell)](https://github.com/PowerShell/PowerShell)
 [![Az.Network](https://img.shields.io/badge/Az.Network-5.0%2B-blue)](https://www.powershellgallery.com/packages/Az.Network)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
