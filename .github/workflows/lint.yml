@@ -106,31 +106,35 @@ jobs:
             Write-Host "::${level} file=${relPath},line=$($r.Line),col=$($r.Column),title=PSSA $($r.RuleName)::$($r.Message)"
           }
 
-          # Surface a summary in the GitHub Actions job summary
+          # Surface a summary in the GitHub Actions job summary.
+          # NOTE: We deliberately build markdown lines one-by-one with regular
+          # strings instead of using a here-string. YAML's block scalar parser
+          # sees pipe characters at the start of a line (even inside a PowerShell
+          # here-string) and gets confused, treating them as YAML's own pipe
+          # indicators. Avoiding here-strings here sidesteps the issue entirely.
           $summaryPath = $env:GITHUB_STEP_SUMMARY
           if ($summaryPath) {
-            $md = @"
-## PSScriptAnalyzer Results
-
-| Severity | Count |
-| --- | ---: |
-| Error | $($errors.Count) |
-| Warning | $($warnings.Count) |
-| Information | $($information.Count) |
-
-### Findings
-
-| Severity | Rule | File | Line | Message |
-| --- | --- | --- | ---: | --- |
-"@
+            $lines = New-Object System.Collections.Generic.List[string]
+            $lines.Add('## PSScriptAnalyzer Results')
+            $lines.Add('')
+            $lines.Add('Severity | Count')
+            $lines.Add('--- | ---:')
+            $lines.Add("Error | $($errors.Count)")
+            $lines.Add("Warning | $($warnings.Count)")
+            $lines.Add("Information | $($information.Count)")
+            $lines.Add('')
+            $lines.Add('### Findings')
+            $lines.Add('')
+            $lines.Add('Severity | Rule | File | Line | Message')
+            $lines.Add('--- | --- | --- | ---: | ---')
             foreach ($r in ($results | Sort-Object Severity, ScriptPath, Line)) {
               $relPath = $r.ScriptPath -replace [regex]::Escape($env:GITHUB_WORKSPACE + [IO.Path]::DirectorySeparatorChar), ''
               $relPath = $relPath -replace '\\', '/'
               # Escape pipe chars in the message so the markdown table doesn't break
-              $msg = ($r.Message -replace '\|', '\|') -replace '`', "'"
-              $md += "`n| $($r.Severity) | $($r.RuleName) | ``$relPath`` | $($r.Line) | $msg |"
+              $msg = ($r.Message -replace '\|', '\\|') -replace '`', "'"
+              $lines.Add("$($r.Severity) | $($r.RuleName) | ``$relPath`` | $($r.Line) | $msg")
             }
-            Add-Content -Path $summaryPath -Value $md
+            Add-Content -Path $summaryPath -Value ($lines -join "`n")
           }
 
           # Fail the build if there are any Errors. Warnings/Information are surfaced
