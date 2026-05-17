@@ -158,7 +158,7 @@
     Author:           John O'Neill Sr.
     Company:          Azure Innovators
     Created:          05/17/2026
-    Version:          1.0.0
+    Version:          1.0.1
     Last Updated:     05/17/2026
 
     REQUIREMENTS:
@@ -274,7 +274,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$ScriptVersion = '1.0.0'
+$ScriptVersion = '1.0.1'
 
 # Azure's built-in DNS resolver - what dnsmasq forwards to.
 $AzureDNSResolverIP = '168.63.129.16'
@@ -652,12 +652,25 @@ try {
         $Location = $vnet.Location
     }
 
-    # Default NamePrefix from VNet name (trim trailing -vnet, take first 12 chars)
-    if (-not $NamePrefix) {
-        $NamePrefix = ($VNetName -replace '-vnet$', '') -replace '[^a-zA-Z0-9-]', ''
-        if ($NamePrefix.Length -gt 12) {
-            $NamePrefix = $NamePrefix.Substring(0, 12)
+    # Default NamePrefix from VNet name. ValidatePattern on the parameter
+    # would re-fire on any reassignment to $NamePrefix, so we use a separate
+    # local variable $effectivePrefix for the auto-derived case and reference
+    # that throughout the rest of the script. If the user passed -NamePrefix
+    # explicitly, we use it as-is (it already passed validation at bind time).
+    $effectivePrefix = if ($NamePrefix) {
+        $NamePrefix
+    } else {
+        # Strip trailing '-vnet', remove non-alphanumeric except hyphens, then
+        # truncate to 12 chars to leave room for the longest suffix we use
+        # (e.g., '-dns-subnet' = 11 chars).
+        $derived = ($VNetName -replace '-vnet$', '') -replace '[^a-zA-Z0-9-]', ''
+        if ($derived.Length -gt 12) {
+            $derived = $derived.Substring(0, 12)
         }
+        # Strip any trailing hyphens left over from truncation.
+        $derived = $derived.TrimEnd('-')
+        Write-LogMessage "  Auto-derived NamePrefix: $derived" -Level Info
+        $derived
     }
 
     # Default ResourceGroupName
@@ -665,12 +678,12 @@ try {
         $ResourceGroupName = "$VNetResourceGroup-dns-rg"
     }
 
-    # Derive resource names from NamePrefix
-    $nsgName       = "$NamePrefix-dns-nsg"
-    $subnetName    = if ($ExistingSubnetName) { $ExistingSubnetName } else { "$NamePrefix-dns-subnet" }
+    # Derive resource names from the effective prefix
+    $nsgName       = "$effectivePrefix-dns-nsg"
+    $subnetName    = if ($ExistingSubnetName) { $ExistingSubnetName } else { "$effectivePrefix-dns-subnet" }
     $vmCount       = if ($HighAvailability) { 2 } else { 1 }
-    $vmNames       = @(1..$vmCount | ForEach-Object { "$NamePrefix-dns-vm$_" })
-    $nicNames      = @(1..$vmCount | ForEach-Object { "$NamePrefix-dns-nic$_" })
+    $vmNames       = @(1..$vmCount | ForEach-Object { "$effectivePrefix-dns-vm$_" })
+    $nicNames      = @(1..$vmCount | ForEach-Object { "$effectivePrefix-dns-nic$_" })
 
     # ---- Pre-flight: SSH key (if specified) ----
     $sshKeyContent = $null
@@ -714,7 +727,7 @@ try {
     Write-Host "  Location:               $Location"
     Write-Host "  VNet:                   $VNetName (RG: $VNetResourceGroup)"
     Write-Host "  Forwarder RG:           $ResourceGroupName"
-    Write-Host "  Name Prefix:            $NamePrefix"
+    Write-Host "  Name Prefix:            $effectivePrefix"
     Write-Host "  Subnet:                 $subnetName ($subnetCIDR)"
     Write-Host "  NSG:                    $nsgName"
     Write-Host "  VM Count:               $vmCount $(if ($HighAvailability) { '(HA)' } else { '(single)' })"
