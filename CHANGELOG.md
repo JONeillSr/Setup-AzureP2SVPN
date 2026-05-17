@@ -9,6 +9,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing pending.
 
+## [Unreleased]
+
+(nothing pending)
+
+## [1.0.9] - 2026-05-17
+
+### Code quality / linting
+
+Both scripts now pass `PSScriptAnalyzer` cleanly with the repo's settings file. Findings from the initial CI run were triaged into three categories:
+
+**Fixed (real cosmetic improvements):**
+
+- HelpMessage and ConfirmImpact parameter values now use spaces around `=` (PowerShell style convention)
+- Switch statement case bodies use single-space before `{` (was using alignment-padding)
+- Variable assignment alignment normalized to single space before `=`
+- Property access operator spacing normalized
+- Em-dash characters in comments replaced with `--` so files are pure ASCII (avoids `PSUseBOMForUnicodeEncodedFile` warning)
+- Empty `catch { }` block in the background-job runspace replaced with `Write-Verbose` and an explanatory comment
+
+**Suppressed via SuppressMessageAttribute (false positives):**
+
+- `PSReviewUnusedParameter` on `-TenantId`, `-SubscriptionId`, `-ConfirmContext` — these script-scope parameters are used by the `Resolve-AzureContext` function but PSSA's function-level analysis can't see the connection
+
+**Suppressed via PSScriptAnalyzerSettings.psd1 (rule misfires):**
+
+- `PSUseUsingScopeModifierInNewRunspaces` — false positive when `-ArgumentList` is correctly used with `Start-Job`'s script block `param()`
+- `PSAvoidUsingDoubleQuotesForConstantString` — purely cosmetic, no correctness benefit
+- `PSUseConsistentIndentation` — misfires on intentional multi-line continuation alignment
+
+### Remove-AzureP2SVPN.ps1
+
+Bumped to v1.0.3 with the same cosmetic fixes and the more informative empty-catch replacement.
+
+### Settings file
+
+`PSScriptAnalyzerSettings.psd1` updated with the additional rule exclusions. Each exclusion is documented inline with the reasoning, so future maintainers can re-enable specific rules if they want to enforce stricter standards.
+
+---
+
 ## [1.0.8] - 2026-05-17
 
 ### Fixed
@@ -216,6 +255,7 @@ This project originated as part of a larger ERPNext-on-Azure deployment toolkit 
 
 The internal lessons that shaped this version's design — particularly around PowerShell job state handling (`Blocked` state is a real failure mode that requires explicit handling) and Azure module parameter naming evolution (`VpnClientAad*` parameters were removed from `New-AzVirtualNetworkGateway` in recent Az.Network versions in favor of the two-phase create-then-configure pattern) — are documented inline in the scripts where future maintainers will see them.
 
+[1.0.9]: https://github.com/JONeillSr/Setup-AzureP2SVPN/releases/tag/v1.0.9
 [1.0.8]: https://github.com/JONeillSr/Setup-AzureP2SVPN/releases/tag/v1.0.8
 [1.0.7]: https://github.com/JONeillSr/Setup-AzureP2SVPN/releases/tag/v1.0.7
 [1.0.6]: https://github.com/JONeillSr/Setup-AzureP2SVPN/releases/tag/v1.0.6

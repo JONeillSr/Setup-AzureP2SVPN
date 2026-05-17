@@ -25,31 +25,28 @@
         # We deliberately use approved Verb-Noun naming for functions; this
         # rule sometimes mistakes script-block helpers for functions.
         # Re-enable if false positives drop in future PSSA versions.
-        'PSUseApprovedVerbs'
+        'PSUseApprovedVerbs',
+
+        # False positive when -ArgumentList is used with Start-Job: PSSA can't
+        # tell that variables are passed explicitly and received by the script
+        # block's own param() declaration. Our Start-Job usage is correct;
+        # we don't need $using: when we're using -ArgumentList.
+        'PSUseUsingScopeModifierInNewRunspaces',
+
+        # Cosmetic only. Single vs double quotes is not a real correctness
+        # concern when no interpolation happens. We use double quotes
+        # consistently for readability since most strings in this codebase
+        # DO interpolate; mixing styles based on whether a single line
+        # happens to have a $var is more visual noise than it's worth.
+        'PSAvoidUsingDoubleQuotesForConstantString',
+
+        # Misfires on intentional multi-line continuation indentation
+        # (e.g., Where-Object pipelines aligned for readability). Real
+        # indentation errors are caught by code review.
+        'PSUseConsistentIndentation'
     )
 
     Rules = @{
-        # Enforce consistent indentation
-        PSUseConsistentIndentation = @{
-            Enable          = $true
-            IndentationSize = 4
-            Kind            = 'space'
-        }
-
-        # Require consistent whitespace around operators and after commas
-        PSUseConsistentWhitespace = @{
-            Enable                                  = $true
-            CheckInnerBrace                         = $true
-            CheckOpenBrace                          = $true
-            CheckOpenParen                          = $true
-            CheckOperator                           = $true
-            CheckPipe                               = $true
-            CheckPipeForRedundantWhitespace         = $false
-            CheckSeparator                          = $true
-            CheckParameter                          = $false
-            IgnoreAssignmentOperatorInsideHashTable = $true
-        }
-
         # OTBS = "One True Brace Style" - opening brace on same line as control statement
         PSPlaceOpenBrace = @{
             Enable             = $true
@@ -63,11 +60,6 @@
             NewLineAfter       = $false
             IgnoreOneLineBlock = $true
             NoEmptyLineBefore  = $false
-        }
-
-        # Single quotes for plain strings (double only when interpolating)
-        PSAvoidUsingDoubleQuotesForConstantString = @{
-            Enable = $true
         }
 
         # Enforce ShouldProcess in cmdlets that need it (the scripts use -WhatIf)

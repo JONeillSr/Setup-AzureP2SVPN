@@ -84,9 +84,9 @@
 .NOTES
     Author:           John O'Neill Sr.
     Company:          Azure Innovators
-    Version:          1.0.2
+    Version:          1.0.3
     Created:          05/16/2026
-    Last Updated:     05/16/2026
+    Last Updated:     05/17/2026
 
     SAFETY:
     The script will refuse to delete a gateway that has active connections.
@@ -102,40 +102,46 @@
 #Requires -Modules Az.Accounts, Az.Network
 
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'TenantId',
+    Justification = 'Used by Resolve-AzureContext via script-scope reference; PSScriptAnalyzer does not trace script-scope parameter usage.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'SubscriptionId',
+    Justification = 'Used by Resolve-AzureContext via script-scope reference; PSScriptAnalyzer does not trace script-scope parameter usage.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'ConfirmContext',
+    Justification = 'Used by Resolve-AzureContext via script-scope reference; PSScriptAnalyzer does not trace script-scope parameter usage.')]
 param(
-    [Parameter(HelpMessage='Name of the VPN Gateway to remove. Derived from -VNetName if not specified.')]
+    [Parameter(HelpMessage = 'Name of the VPN Gateway to remove. Derived from -VNetName if not specified.')]
     [string]$GatewayName,
 
-    [Parameter(HelpMessage='Resource group containing the gateway. Defaults to -VNetResourceGroup.')]
+    [Parameter(HelpMessage = 'Resource group containing the gateway. Defaults to -VNetResourceGroup.')]
     [string]$ResourceGroupName,
 
-    [Parameter(Mandatory, HelpMessage='Name of the VNet the gateway is attached to.')]
+    [Parameter(Mandatory, HelpMessage = 'Name of the VNet the gateway is attached to.')]
     [ValidateNotNullOrEmpty()]
     [string]$VNetName,
 
-    [Parameter(Mandatory, HelpMessage='Resource group containing the VNet.')]
+    [Parameter(Mandatory, HelpMessage = 'Resource group containing the VNet.')]
     [ValidateNotNullOrEmpty()]
     [string]$VNetResourceGroup,
 
-    [Parameter(HelpMessage='Resource naming prefix. When provided, the script locates resources named "<NamePrefix>-vpngw" and "<NamePrefix>-vpngw-pip". Should match the -NamePrefix used during Setup-AzureP2SVPN.')]
+    [Parameter(HelpMessage = 'Resource naming prefix. When provided, the script locates resources named "<NamePrefix>-vpngw" and "<NamePrefix>-vpngw-pip". Should match the -NamePrefix used during Setup-AzureP2SVPN.')]
     [string]$NamePrefix,
 
-    [Parameter(HelpMessage='Also remove the GatewaySubnet from the VNet after the gateway is deleted.')]
+    [Parameter(HelpMessage = 'Also remove the GatewaySubnet from the VNet after the gateway is deleted.')]
     [switch]$RemoveGatewaySubnet,
 
-    [Parameter(HelpMessage='Skip the interactive confirmation prompt.')]
+    [Parameter(HelpMessage = 'Skip the interactive confirmation prompt.')]
     [switch]$Force,
 
-    [Parameter(HelpMessage='Entra tenant ID. Defaults to the current authenticated context.')]
+    [Parameter(HelpMessage = 'Entra tenant ID. Defaults to the current authenticated context.')]
     [string]$TenantId,
 
-    [Parameter(HelpMessage='Subscription ID. Defaults to the current authenticated context.')]
+    [Parameter(HelpMessage = 'Subscription ID. Defaults to the current authenticated context.')]
     [string]$SubscriptionId,
 
-    [Parameter(HelpMessage='Multi-tenant safety bypass: accept the current Azure context without an explicit -SubscriptionId. Required if your account can see multiple subscriptions. Non-interactive flag.')]
+    [Parameter(HelpMessage = 'Multi-tenant safety bypass: accept the current Azure context without an explicit -SubscriptionId. Required if your account can see multiple subscriptions. Non-interactive flag.')]
     [switch]$ConfirmContext,
 
-    [Parameter(HelpMessage='Timeout in minutes for the gateway deletion operation.')]
+    [Parameter(HelpMessage = 'Timeout in minutes for the gateway deletion operation.')]
     [ValidateRange(5, 90)]
     [int]$TimeoutMinutes = 30
 )
@@ -143,7 +149,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$ScriptVersion = '1.0.2'
+$ScriptVersion = '1.0.3'
 
 # Default the deployment RG to the VNet RG if not specified
 if (-not $ResourceGroupName) {
@@ -194,9 +200,9 @@ function Write-LogMessage {
     $color = switch ($Level) {
         'Success' { 'Green' }
         'Warning' { 'Yellow' }
-        'Error'   { 'Red' }
-        'Debug'   { 'DarkGray' }
-        default   { 'White' }
+        'Error' { 'Red' }
+        'Debug' { 'DarkGray' }
+        default { 'White' }
     }
     Write-Host $line -ForegroundColor $color
 }
@@ -326,13 +332,28 @@ try {
             # Use Start-Job with explicit ConfirmPreference inside the runspace.
             # Same pattern as Remove-ERPNextAzureDeployment learned the hard way:
             # background job runspaces don't inherit prompt suppression.
+            #
+            # NOTE: PSScriptAnalyzer flags param-block variables in the
+            # script block below with PSUseUsingScopeModifierInNewRunspaces,
+            # but the warning is a false positive: variables are passed via
+            # -ArgumentList and bound by the script-block's own param()
+            # declaration, not closure-captured from the parent scope.
+            # Suppression is handled via PSScriptAnalyzerSettings.psd1.
             $delJob = Start-Job -ScriptBlock {
                 param($GwName, $RGName, $SubId, $TenantId)
                 $ConfirmPreference = 'None'
                 $PSDefaultParameterValues['*:Confirm'] = $false
                 Import-Module Az.Network -ErrorAction Stop
                 Import-Module Az.Accounts -ErrorAction Stop
-                try { $null = Set-AzContext -Tenant $TenantId -SubscriptionId $SubId -ErrorAction SilentlyContinue } catch { }
+                try {
+                    $null = Set-AzContext -Tenant $TenantId -SubscriptionId $SubId -ErrorAction SilentlyContinue
+                } catch {
+                    # Intentionally swallowed: Set-AzContext failure here is
+                    # non-fatal because Get-AzContext in the parent runspace
+                    # had already succeeded. The Remove cmdlet will surface a
+                    # clearer error if context truly isn't usable.
+                    Write-Verbose "Set-AzContext in background runspace failed (non-fatal): $_"
+                }
                 Remove-AzVirtualNetworkGateway -Name $GwName -ResourceGroupName $RGName -Force -Confirm:$false
             } -ArgumentList $GatewayName, $ResourceGroupName, $context.Subscription.Id, $context.Tenant.Id
 
@@ -432,16 +453,16 @@ try {
     Write-Host ''
 
     $result = [PSCustomObject]@{
-        GatewayName        = $GatewayName
-        ResourceGroup      = $ResourceGroupName
-        VNetName           = $VNetName
-        VNetResourceGroup  = $VNetResourceGroup
-        GatewayDeleted     = [bool]$gateway
-        PublicIPDeleted    = [bool]$publicIp
-        SubnetRemoved      = $RemoveGatewaySubnet -and $gatewaySubnet
-        LogFile            = $LogFile
-        ScriptVersion      = $ScriptVersion
-        TeardownTime       = (Get-Date -Format 'o')
+        GatewayName = $GatewayName
+        ResourceGroup = $ResourceGroupName
+        VNetName = $VNetName
+        VNetResourceGroup = $VNetResourceGroup
+        GatewayDeleted = [bool]$gateway
+        PublicIPDeleted = [bool]$publicIp
+        SubnetRemoved = $RemoveGatewaySubnet -and $gatewaySubnet
+        LogFile = $LogFile
+        ScriptVersion = $ScriptVersion
+        TeardownTime = (Get-Date -Format 'o')
     }
     $result
 

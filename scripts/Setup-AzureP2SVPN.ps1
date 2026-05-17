@@ -149,7 +149,7 @@
     Author:           John O'Neill Sr.
     Company:          Azure Innovators
     Created:          05/16/2026
-    Version:          1.0.8
+    Version:          1.0.9
     Last Updated:     05/17/2026
 
     REQUIREMENTS:
@@ -178,55 +178,61 @@
 #Requires -Modules Az.Accounts, Az.Network, Az.Resources
 
 [CmdletBinding(SupportsShouldProcess)]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'TenantId',
+    Justification = 'Used by Resolve-AzureContext via script-scope reference; PSScriptAnalyzer does not trace script-scope parameter usage.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'SubscriptionId',
+    Justification = 'Used by Resolve-AzureContext via script-scope reference; PSScriptAnalyzer does not trace script-scope parameter usage.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'ConfirmContext',
+    Justification = 'Used by Resolve-AzureContext via script-scope reference; PSScriptAnalyzer does not trace script-scope parameter usage.')]
 param(
-    [Parameter(Mandatory, HelpMessage='Name of the existing VNet to attach the gateway to.')]
+    [Parameter(Mandatory, HelpMessage = 'Name of the existing VNet to attach the gateway to.')]
     [ValidateNotNullOrEmpty()]
     [string]$VNetName,
 
-    [Parameter(HelpMessage='Resource group containing the existing VNet.')]
+    [Parameter(HelpMessage = 'Resource group containing the existing VNet.')]
     [string]$VNetResourceGroup,
 
-    [Parameter(HelpMessage='Resource group where the VPN Gateway and its public IP will be created. Defaults to the VNet RG.')]
+    [Parameter(HelpMessage = 'Resource group where the VPN Gateway and its public IP will be created. Defaults to the VNet RG.')]
     [string]$ResourceGroupName,
 
-    [Parameter(HelpMessage='Azure region. Must match the VNet region. Default: westus2.')]
+    [Parameter(HelpMessage = 'Azure region. Must match the VNet region. Default: westus2.')]
     [ValidateNotNullOrEmpty()]
     [string]$Location = 'westus2',
 
-    [Parameter(HelpMessage='CIDR for the GatewaySubnet. Microsoft requires this subnet to be named exactly GatewaySubnet. Default: 10.0.3.0/27.')]
+    [Parameter(HelpMessage = 'CIDR for the GatewaySubnet. Microsoft requires this subnet to be named exactly GatewaySubnet. Default: 10.0.3.0/27.')]
     [ValidatePattern('^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$')]
     [string]$GatewaySubnetPrefix = '10.0.3.0/27',
 
-    [Parameter(HelpMessage='CIDR for the address pool assigned to VPN clients. Must not overlap VNet address space. Default: 172.16.100.0/24.')]
+    [Parameter(HelpMessage = 'CIDR for the address pool assigned to VPN clients. Must not overlap VNet address space. Default: 172.16.100.0/24.')]
     [ValidatePattern('^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$')]
     [string]$VPNClientAddressPool = '172.16.100.0/24',
 
-    [Parameter(HelpMessage='Resource naming prefix. When provided, all VPN resources are named "<NamePrefix>-vpngw", "<NamePrefix>-vpngw-pip", etc. Matches the convention used by sibling Azure Innovators deployment scripts (Deploy-ERPNextToAzure, etc). If not specified, names are derived from the VNet name.')]
+    [Parameter(HelpMessage = 'Resource naming prefix. When provided, all VPN resources are named "<NamePrefix>-vpngw", "<NamePrefix>-vpngw-pip", etc. Matches the convention used by sibling Azure Innovators deployment scripts (Deploy-ERPNextToAzure, etc). If not specified, names are derived from the VNet name.')]
     [string]$NamePrefix,
 
-    [Parameter(HelpMessage='Name of the VPN Gateway. Overrides naming derivation entirely. Derived from -NamePrefix or VNet name if not set.')]
+    [Parameter(HelpMessage = 'Name of the VPN Gateway. Overrides naming derivation entirely. Derived from -NamePrefix or VNet name if not set.')]
     [string]$GatewayName,
 
-    [Parameter(HelpMessage='VPN Gateway SKU. VpnGw1AZ is the minimum that supports Entra ID auth. Non-AZ SKUs (VpnGw1/2/3 without the AZ suffix) are no longer supported for new gateways by Azure as of 2026.')]
+    [Parameter(HelpMessage = 'VPN Gateway SKU. VpnGw1AZ is the minimum that supports Entra ID auth. Non-AZ SKUs (VpnGw1/2/3 without the AZ suffix) are no longer supported for new gateways by Azure as of 2026.')]
     [ValidateSet('VpnGw1AZ', 'VpnGw2AZ', 'VpnGw3AZ', 'VpnGw4AZ', 'VpnGw5AZ', 'VpnGw1', 'VpnGw2', 'VpnGw3')]
     [string]$GatewaySku = 'VpnGw1AZ',
 
-    [Parameter(HelpMessage='Entra tenant ID. Defaults to the current authenticated context.')]
+    [Parameter(HelpMessage = 'Entra tenant ID. Defaults to the current authenticated context.')]
     [string]$TenantId,
 
-    [Parameter(HelpMessage='Subscription ID. Defaults to the current authenticated context.')]
+    [Parameter(HelpMessage = 'Subscription ID. Defaults to the current authenticated context.')]
     [string]$SubscriptionId,
 
-    [Parameter(HelpMessage='Use the legacy manually-registered Azure VPN Client app ID instead of the Microsoft-registered one. Requires tenant admin consent to a separate enterprise app. Only use this if you have older Azure VPN Client versions deployed (pre-2023).')]
+    [Parameter(HelpMessage = 'Use the legacy manually-registered Azure VPN Client app ID instead of the Microsoft-registered one. Requires tenant admin consent to a separate enterprise app. Only use this if you have older Azure VPN Client versions deployed (pre-2023).')]
     [switch]$UseLegacyAudience,
 
-    [Parameter(HelpMessage='Multi-tenant safety bypass: accept the current Azure context without an explicit -SubscriptionId. Required if your account can see multiple subscriptions. The script does not prompt - this is a non-interactive flag.')]
+    [Parameter(HelpMessage = 'Multi-tenant safety bypass: accept the current Azure context without an explicit -SubscriptionId. Required if your account can see multiple subscriptions. The script does not prompt - this is a non-interactive flag.')]
     [switch]$ConfirmContext,
 
-    [Parameter(HelpMessage='Skip public IP creation (assume it already exists).')]
+    [Parameter(HelpMessage = 'Skip public IP creation (assume it already exists).')]
     [switch]$SkipPublicIP,
 
-    [Parameter(HelpMessage='Override the default gateway provisioning timeout (in minutes). Azure VPN Gateways take 25-35 minutes for non-AZ SKUs, 30-60+ minutes for AZ-variant SKUs (which deploy zone-redundantly).')]
+    [Parameter(HelpMessage = 'Override the default gateway provisioning timeout (in minutes). Azure VPN Gateways take 25-35 minutes for non-AZ SKUs, 30-60+ minutes for AZ-variant SKUs (which deploy zone-redundantly).')]
     [ValidateRange(15, 120)]
     [int]$ProvisioningTimeoutMinutes = 75
 )
@@ -235,7 +241,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$ScriptVersion = '1.0.8'
+$ScriptVersion = '1.0.9'
 
 # Default the deployment RG to the VNet RG if not specified
 if (-not $ResourceGroupName) {
@@ -290,9 +296,9 @@ function Write-LogMessage {
     $color = switch ($Level) {
         'Success' { 'Green' }
         'Warning' { 'Yellow' }
-        'Error'   { 'Red' }
-        'Debug'   { 'DarkGray' }
-        default   { 'White' }
+        'Error' { 'Red' }
+        'Debug' { 'DarkGray' }
+        default { 'White' }
     }
     Write-Host $line -ForegroundColor $color
 }
@@ -387,14 +393,14 @@ function Get-AzureVPNAudienceValue {
 
     if ($Legacy) {
         return @{
-            AppId    = '41b23e61-6c1e-4545-b367-cd054e0ed4b4'
-            Label    = 'Legacy (manually-registered) Azure VPN Client app'
+            AppId = '41b23e61-6c1e-4545-b367-cd054e0ed4b4'
+            Label = 'Legacy (manually-registered) Azure VPN Client app'
             NeedsConsent = $true
         }
     } else {
         return @{
-            AppId    = 'c632b3df-fb67-4d84-bdcf-b95ad541b5c8'
-            Label    = 'Microsoft-registered Azure VPN Client app (recommended)'
+            AppId = 'c632b3df-fb67-4d84-bdcf-b95ad541b5c8'
+            Label = 'Microsoft-registered Azure VPN Client app (recommended)'
             NeedsConsent = $false
         }
     }
@@ -670,7 +676,7 @@ Then re-run this script.
     # public IP is attached to an AZ gateway. Zones are set at creation time
     # and immutable, so an existing non-zonal PIP must be recreated.
     $needsZonalPip = $GatewaySku -match 'AZ$'
-    $desiredZones  = if ($needsZonalPip) { @('1', '2', '3') } else { @() }
+    $desiredZones = if ($needsZonalPip) { @('1', '2', '3') } else { @() }
 
     if ($SkipPublicIP) {
         $gatewayPip = Get-AzPublicIpAddress -Name $GatewayPublicIPName -ResourceGroupName $ResourceGroupName -ErrorAction Stop
@@ -692,7 +698,7 @@ Then re-run this script.
 
             if (-not $zonesAreCorrect) {
                 $existingDesc = if ($existingZones.Count -eq 0) { 'regional (no zones)' } else { "zones $($existingZones -join ',')" }
-                $desiredDesc  = if ($needsZonalPip) { 'zone-redundant (zones 1,2,3)' } else { 'regional (no zones)' }
+                $desiredDesc = if ($needsZonalPip) { 'zone-redundant (zones 1,2,3)' } else { 'regional (no zones)' }
                 Write-LogMessage "  Existing Public IP has $existingDesc but gateway SKU $GatewaySku requires $desiredDesc." -Level Warning
                 Write-LogMessage '  Zone configuration is immutable; recreating the Public IP...' -Level Warning
 
@@ -716,11 +722,11 @@ Then re-run this script.
             if ($PSCmdlet.ShouldProcess($GatewayPublicIPName, 'Create Public IP for VPN Gateway')) {
                 # Standard SKU + Static allocation. Zone-redundant for AZ gateway SKUs.
                 $pipParams = @{
-                    Name              = $GatewayPublicIPName
+                    Name = $GatewayPublicIPName
                     ResourceGroupName = $ResourceGroupName
-                    Location          = $Location
-                    AllocationMethod  = 'Static'
-                    Sku               = 'Standard'
+                    Location = $Location
+                    AllocationMethod = 'Static'
+                    Sku = 'Standard'
                 }
                 if ($needsZonalPip) {
                     $pipParams['Zone'] = $desiredZones
@@ -739,7 +745,7 @@ Then re-run this script.
     # the gateway here or reuse an existing one.
     $aadTenantUri = "https://login.microsoftonline.com/$($context.Tenant.Id)"
     $aadIssuerUri = "https://sts.windows.net/$($context.Tenant.Id)/"
-    $aadAudience  = $audienceInfo.AppId
+    $aadAudience = $audienceInfo.AppId
 
     Write-LogMessage 'Step 3/4: VPN Gateway provisioning' -Level Info
     $existingGw = Get-AzVirtualNetworkGateway -Name $GatewayName -ResourceGroupName $ResourceGroupName -ErrorAction SilentlyContinue
@@ -829,7 +835,7 @@ Then re-run this script.
     }
 
     # PHASE 2: Apply AAD configuration. Runs whether the gateway was just created
-    # or already existed (idempotent — Set-AzVirtualNetworkGateway with the same
+    # or already existed (idempotent -- Set-AzVirtualNetworkGateway with the same
     # values is a no-op if AAD is already configured to match).
     $gateway = Get-AzVirtualNetworkGateway -Name $GatewayName -ResourceGroupName $ResourceGroupName
 
@@ -841,14 +847,14 @@ Then re-run this script.
     if ($null -ne $gateway.VpnClientConfiguration) {
         $vpc = $gateway.VpnClientConfiguration
         # Use PSObject.Properties to test for property existence under strict mode.
-        $hasTenantUri  = $vpc.PSObject.Properties.Name -contains 'AadTenantUri'
+        $hasTenantUri = $vpc.PSObject.Properties.Name -contains 'AadTenantUri'
         $hasAudienceId = $vpc.PSObject.Properties.Name -contains 'AadAudienceId'
-        $hasIssuerUri  = $vpc.PSObject.Properties.Name -contains 'AadIssuerUri'
+        $hasIssuerUri = $vpc.PSObject.Properties.Name -contains 'AadIssuerUri'
         if ($hasTenantUri -and $hasAudienceId -and $hasIssuerUri) {
             $aadAlreadyConfigured = ($null -ne $vpc.AadTenantUri) -and
                                     ($vpc.AadAudienceId -eq $aadAudience) -and
-                                    ($vpc.AadTenantUri  -eq $aadTenantUri) -and
-                                    ($vpc.AadIssuerUri  -eq $aadIssuerUri)
+                                    ($vpc.AadTenantUri -eq $aadTenantUri) -and
+                                    ($vpc.AadIssuerUri -eq $aadIssuerUri)
         }
     }
 
@@ -956,24 +962,24 @@ Then re-run this script.
 
     # Return a structured result object
     $result = [PSCustomObject]@{
-        GatewayName        = $GatewayName
-        ResourceGroup      = $ResourceGroupName
-        Location           = $Location
-        SKU                = $GatewaySku
-        PublicIP           = $gatewayPip.IpAddress
-        VNetName           = $VNetName
-        VNetResourceGroup  = $VNetResourceGroup
-        GatewaySubnet      = $GatewaySubnetPrefix
-        ClientAddressPool  = $VPNClientAddressPool
-        TenantId           = $context.Tenant.Id
+        GatewayName = $GatewayName
+        ResourceGroup = $ResourceGroupName
+        Location = $Location
+        SKU = $GatewaySku
+        PublicIP = $gatewayPip.IpAddress
+        VNetName = $VNetName
+        VNetResourceGroup = $VNetResourceGroup
+        GatewaySubnet = $GatewaySubnetPrefix
+        ClientAddressPool = $VPNClientAddressPool
+        TenantId = $context.Tenant.Id
         AuthenticationMethod = 'EntraID'
-        AudienceType       = $audienceInfo.Label
-        AudienceAppId      = $audienceInfo.AppId
-        ClientPackageURL   = if ($clientPackage) { $clientPackage.VPNProfileSASUrl } else { $null }
-        ProvisioningState  = $gateway.ProvisioningState
-        LogFile            = $LogFile
-        ScriptVersion      = $ScriptVersion
-        DeploymentTime     = (Get-Date -Format 'o')
+        AudienceType = $audienceInfo.Label
+        AudienceAppId = $audienceInfo.AppId
+        ClientPackageURL = if ($clientPackage) { $clientPackage.VPNProfileSASUrl } else { $null }
+        ProvisioningState = $gateway.ProvisioningState
+        LogFile = $LogFile
+        ScriptVersion = $ScriptVersion
+        DeploymentTime = (Get-Date -Format 'o')
     }
     $result
 
