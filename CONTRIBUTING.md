@@ -42,13 +42,23 @@ The scripts deliberately favor clarity over cleverness:
 
 ## Scope
 
-This repo is specifically for **Azure Point-to-Site VPN Gateway provisioning with Entra ID authentication**. Out of scope:
+This repo covers **Azure Point-to-Site VPN Gateway provisioning with Entra ID authentication, plus the DNS infrastructure that makes VPN access actually useful**.
+
+In scope:
+
+- VPN Gateway provisioning, configuration, and teardown
+- Private DNS Zone setup for split-horizon DNS over VPN
+- Lightweight DNS forwarder VM to bridge VPN clients to Azure DNS
+- Helper tooling around the above (e.g., VPN client config generation)
+
+Out of scope:
 
 - Site-to-Site (S2S) VPN configuration (different cmdlets, different concerns)
 - ExpressRoute (entirely different service)
 - VPN gateway operations beyond setup/teardown (use Az.Network directly)
 - Workload deployment that happens to sit behind a VPN (use workload-specific tools)
 - Tenant-level Entra ID configuration (use the Entra portal or Microsoft Graph SDK)
+- Heavyweight DNS infrastructure (Azure DNS Private Resolver, AD-integrated DNS) — the lightweight dnsmasq forwarder pattern in this repo is sized for SMB scenarios where the gateway already exists; larger deployments should use Azure DNS Private Resolver
 
 If you have a use case that's adjacent but distinct, consider a separate repo.
 

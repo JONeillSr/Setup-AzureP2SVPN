@@ -9,9 +9,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing pending.
 
-## [Unreleased]
+## [1.1.0] - 2026-05-18
 
-(nothing pending)
+### Added
+
+This release rounds out the "complete VPN access pattern" by adding two scripts that solve the DNS half of the puzzle. The P2S VPN gateway alone gives VPN-connected clients network reachability to private VNet resources, but they still resolve hostnames via their local ISP DNS — which doesn't know about your private resources. These two scripts close that gap.
+
+**Why these belong in this repo:** The DNS-for-VPN-clients problem is structurally inseparable from the VPN gateway itself. Without a working DNS path, your "VPN access" only works if users memorize private IP addresses, which nobody actually does. By keeping the gateway and the DNS scripts in one repo, the complete pattern can be deployed and torn down consistently.
+
+- **`scripts/Add-AzureSplitHorizonDNS.ps1` (v1.0.0)** — Provisions an Azure Private DNS Zone that mirrors an existing Public DNS Zone, links it to your VNet, and optionally smart-copies records from the public zone into the private zone.
+
+  Split-horizon (also called split-brain) DNS is the pattern where the same FQDN resolves to a private IP from inside the VNet/VPN and a public IP from the internet. This is the standard way to access internal services using your real domain name without exposing them publicly.
+
+  The script handles the *first* half of the split-horizon setup:
+  - **Creates** the Private DNS Zone matching your public zone name
+  - **Links** it to your existing VNet (idempotent — reuses existing link if present)
+  - **Adds** explicit private records you specify via `-PrivateRecords @{ 'erpnext' = '10.0.2.4' }`
+  - **Optionally smart-copies** all public records with conflict flagging:
+    - A/AAAA records: copied (flagged if pointing to public IPs — likely candidates for an explicit private override)
+    - CNAME records: copied
+    - MX records: skipped (mail flow should remain via public DNS even from inside the VNet)
+    - SPF/DKIM/DMARC TXT records: skipped (same reason)
+    - NS/SOA: never copied (managed by Azure)
+
+  In-VNet resources automatically resolve names via Azure DNS (168.63.129.16) which sees the linked private zone. VPN-connected clients need the second script.
+
+- **`scripts/Add-AzureDNSForwarder.ps1` (v1.0.1)** — Provisions a lightweight Ubuntu 24.04 VM running dnsmasq inside the VNet, configures the VNet's `DhcpOptions.DnsServers` to advertise the forwarder, and (after VPN profile regeneration) routes VPN client DNS queries through the forwarder.
+
+  This solves the second half of split-horizon: Azure's built-in DNS resolver at 168.63.129.16 is only reachable from inside the VNet. VPN clients can't query it directly. The forwarder acts as a bridge — VPN clients query the forwarder, which queries Azure DNS, which sees the private zone.
+
+  Defaults are tuned for typical use:
+  - **VM size**: `Standard_B1s` (~$8/month — DNS forwarding is near-zero load)
+  - **Subnet**: auto-derives next available `/28` in the VNet (or pass `-DNSSubnetCIDR`)
+  - **Static private IP**: critical — the IP gets pushed via the VNet DNS setting and reboots can't change it
+  - **NSG**: locked down to port 53 from inside the VNet and from the VPN client pool only
+  - **SSH**: locked to `VirtualNetwork` source by default (VPN connection required to administer)
+  - **cloud-init**: installs and configures dnsmasq, disables systemd-resolved's port-53 stub listener (Ubuntu 24.04 default that conflicts), enables unattended security upgrades
+  - **Optional `-HighAvailability`** spins up two VMs with sequential static IPs for active/active redundancy
+
+### Why the split-horizon pattern matters operationally
+
+Without these scripts, users had two unappealing choices for resolving internal hostnames over VPN:
+- Memorize private IPs (works for one or two services, doesn't scale)
+- Manually edit each VPN client's `azurevpnconfig.xml` to inject DNS server entries (works but is fragile and breaks on every profile regeneration)
+
+With the split-horizon + forwarder combo, the public domain "just works" from both sides: customers and search engines see the public IP, VPN-connected staff see the internal IP, and you maintain a single source of truth in DNS.
+
+### The architecture this enables end-to-end
+
+```
+Internet     → erpnext.example.com → Public IP (or NXDOMAIN if not exposed)
+
+VPN client   → erpnext.example.com → forwarder VM → Azure DNS → Private Zone → 10.0.2.4
+```
+
+Same FQDN, different answer based on where the resolver is.
+
+### Documentation
+
+- **USER-GUIDE.md**: new "DNS for VPN clients" section walking through the complete pattern (gateway + private zone + forwarder)
+- **README.md**: extended script table and a "Complete VPN access pattern" section
+- This CHANGELOG entry serves as a release-time summary; see the script `.SYNOPSIS` and `.DESCRIPTION` blocks for parameter-by-parameter reference
+
+### Backwards compatibility
+
+These are net-new scripts that don't modify existing behavior. `Setup-AzureP2SVPN.ps1` and `Remove-AzureP2SVPN.ps1` are unchanged in this release. Existing deployments work without these new scripts; users who want DNS for VPN clients can opt in by running the new scripts after the gateway is up.
 
 ## [1.0.9] - 2026-05-17
 
@@ -255,6 +317,7 @@ This project originated as part of a larger ERPNext-on-Azure deployment toolkit 
 
 The internal lessons that shaped this version's design — particularly around PowerShell job state handling (`Blocked` state is a real failure mode that requires explicit handling) and Azure module parameter naming evolution (`VpnClientAad*` parameters were removed from `New-AzVirtualNetworkGateway` in recent Az.Network versions in favor of the two-phase create-then-configure pattern) — are documented inline in the scripts where future maintainers will see them.
 
+[1.1.0]: https://github.com/JONeillSr/Setup-AzureP2SVPN/releases/tag/v1.1.0
 [1.0.9]: https://github.com/JONeillSr/Setup-AzureP2SVPN/releases/tag/v1.0.9
 [1.0.8]: https://github.com/JONeillSr/Setup-AzureP2SVPN/releases/tag/v1.0.8
 [1.0.7]: https://github.com/JONeillSr/Setup-AzureP2SVPN/releases/tag/v1.0.7
